@@ -1,0 +1,531 @@
+{
+  "_about": "Shared test data for IST 488/688 final project. Use these fixtures to test functions in any notebook without needing live API keys. Load with: import json; F = json.load(open('test_fixtures.json'))",
+  "raw_places_api_responses": {
+    "_about": "Shape returned by Places API (New) Text Search with our field mask. Pass into normalize_place(raw, city='Syracuse, NY').",
+    "syracuse_response": {
+      "places": [
+        {
+          "id": "ChIJN1t_tDeuEmsRUsoyG83frY4",
+          "displayName": {
+            "text": "Dinosaur Bar-B-Que",
+            "languageCode": "en"
+          },
+          "formattedAddress": "246 W Willow St, Syracuse, NY 13202, USA",
+          "rating": 4.5,
+          "userRatingCount": 6800,
+          "priceLevel": "PRICE_LEVEL_MODERATE",
+          "websiteUri": "https://www.dinosaurbarbque.com/",
+          "types": [
+            "barbecue_restaurant",
+            "restaurant",
+            "food",
+            "point_of_interest"
+          ]
+        },
+        {
+          "id": "ChIJ7T8tDeuEmsRUsoyG83frY5",
+          "displayName": {
+            "text": "Pastabilities",
+            "languageCode": "en"
+          },
+          "formattedAddress": "311 S Franklin St, Syracuse, NY 13202, USA",
+          "rating": 4.4,
+          "userRatingCount": 2100,
+          "priceLevel": "PRICE_LEVEL_MODERATE",
+          "websiteUri": "https://pastabilities.com/",
+          "types": [
+            "italian_restaurant",
+            "restaurant",
+            "food"
+          ]
+        },
+        {
+          "id": "ChIJ8T8tDeuEmsRUsoyG83frY6",
+          "displayName": {
+            "text": "No Website Diner",
+            "languageCode": "en"
+          },
+          "formattedAddress": "100 Main St, Syracuse, NY 13202, USA",
+          "rating": 3.9,
+          "userRatingCount": 120,
+          "priceLevel": "PRICE_LEVEL_INEXPENSIVE",
+          "types": [
+            "restaurant"
+          ]
+        }
+      ]
+    }
+  },
+  "normalized_restaurants": [
+    {
+      "place_id": "syr_001",
+      "name": "Dinosaur Bar-B-Que",
+      "address": "246 W Willow St, Syracuse, NY 13202",
+      "city": "Syracuse",
+      "rating": 4.5,
+      "user_rating_count": 6800,
+      "price_level": "MODERATE",
+      "website_url": "https://www.dinosaurbarbque.com/",
+      "types": [
+        "restaurant",
+        "barbecue_restaurant"
+      ]
+    },
+    {
+      "place_id": "syr_002",
+      "name": "Pastabilities",
+      "address": "311 S Franklin St, Syracuse, NY 13202",
+      "city": "Syracuse",
+      "rating": 4.4,
+      "user_rating_count": 2100,
+      "price_level": "MODERATE",
+      "website_url": "https://pastabilities.com/",
+      "types": [
+        "restaurant",
+        "italian_restaurant"
+      ]
+    },
+    {
+      "place_id": "syr_003",
+      "name": "Apizza Regionale",
+      "address": "260 W Genesee St, Syracuse, NY 13202",
+      "city": "Syracuse",
+      "rating": 4.4,
+      "user_rating_count": 950,
+      "price_level": "MODERATE",
+      "website_url": "https://apizzaregionale.com/",
+      "types": [
+        "restaurant",
+        "pizza_restaurant"
+      ]
+    },
+    {
+      "place_id": "roc_001",
+      "name": "Nick Tahou Hots",
+      "address": "320 W Main St, Rochester, NY 14608",
+      "city": "Rochester",
+      "rating": 4.2,
+      "user_rating_count": 2300,
+      "price_level": "INEXPENSIVE",
+      "website_url": "https://nicktahous.com/",
+      "types": [
+        "restaurant",
+        "american_restaurant"
+      ]
+    },
+    {
+      "place_id": "roc_002",
+      "name": "Good Luck",
+      "address": "50 Anderson Ave, Rochester, NY 14607",
+      "city": "Rochester",
+      "rating": 4.6,
+      "user_rating_count": 1100,
+      "price_level": "EXPENSIVE",
+      "website_url": "https://restaurantgoodluck.com/",
+      "types": [
+        "restaurant",
+        "american_restaurant"
+      ]
+    },
+    {
+      "place_id": "alb_001",
+      "name": "Cafe Capriccio",
+      "address": "49 Grand St, Albany, NY 12202",
+      "city": "Albany",
+      "rating": 4.6,
+      "user_rating_count": 920,
+      "price_level": "EXPENSIVE",
+      "website_url": "https://cafecapriccio.com/",
+      "types": [
+        "restaurant",
+        "italian_restaurant"
+      ]
+    },
+    {
+      "place_id": "alb_002",
+      "name": "Jack's Oyster House",
+      "address": "42 State St, Albany, NY 12207",
+      "city": "Albany",
+      "rating": 4.4,
+      "user_rating_count": 1300,
+      "price_level": "EXPENSIVE",
+      "website_url": "https://jacksoysterhouse.com/",
+      "types": [
+        "restaurant",
+        "seafood_restaurant"
+      ]
+    },
+    {
+      "place_id": "alb_003",
+      "name": "El Loco Mexican Cafe",
+      "address": "465 Madison Ave, Albany, NY 12208",
+      "city": "Albany",
+      "rating": 4.4,
+      "user_rating_count": 950,
+      "price_level": "MODERATE",
+      "website_url": "https://ellococafe.com/",
+      "types": [
+        "restaurant",
+        "mexican_restaurant"
+      ]
+    }
+  ],
+  "enriched_restaurants": [
+    {
+      "place_id": "syr_001",
+      "name": "Dinosaur Bar-B-Que",
+      "address": "246 W Willow St, Syracuse, NY 13202",
+      "city": "Syracuse",
+      "rating": 4.5,
+      "price_level": "MODERATE",
+      "website_url": "https://www.dinosaurbarbque.com/",
+      "cuisine_type": "BBQ",
+      "menu_items": [
+        {
+          "name": "Big Ass Pork Plate",
+          "description": "Slow-smoked pulled pork shoulder"
+        },
+        {
+          "name": "Brontosaurus Rib",
+          "description": "Single giant beef rib"
+        },
+        {
+          "name": "Brisket Sandwich",
+          "description": "Texas-style smoked brisket"
+        },
+        {
+          "name": "Mac and Cheese",
+          "description": "Side, made with cheddar"
+        }
+      ],
+      "price_range": "$$",
+      "menu_available_online": true,
+      "scrape_failed": false
+    },
+    {
+      "place_id": "syr_002",
+      "name": "Pastabilities",
+      "address": "311 S Franklin St, Syracuse, NY 13202",
+      "city": "Syracuse",
+      "rating": 4.4,
+      "price_level": "MODERATE",
+      "website_url": "https://pastabilities.com/",
+      "cuisine_type": "Italian",
+      "menu_items": [
+        {
+          "name": "Spicy Hot Tomato Oil Pasta",
+          "description": "Signature dish"
+        },
+        {
+          "name": "Chicken Riggies",
+          "description": "Syracuse classic, spicy cherry pepper sauce"
+        },
+        {
+          "name": "Stretch Bread",
+          "description": "House specialty bread"
+        }
+      ],
+      "price_range": "$$",
+      "menu_available_online": true,
+      "scrape_failed": false
+    },
+    {
+      "place_id": "syr_003",
+      "name": "Apizza Regionale",
+      "address": "260 W Genesee St, Syracuse, NY 13202",
+      "city": "Syracuse",
+      "rating": 4.4,
+      "price_level": "MODERATE",
+      "website_url": "https://apizzaregionale.com/",
+      "cuisine_type": "Pizza",
+      "menu_items": [
+        {
+          "name": "Margherita",
+          "description": "San Marzano tomato, mozzarella, basil"
+        },
+        {
+          "name": "Soppressata",
+          "description": "Spicy cured pork pizza"
+        }
+      ],
+      "price_range": "$$",
+      "menu_available_online": true,
+      "scrape_failed": false
+    },
+    {
+      "place_id": "roc_001",
+      "name": "Nick Tahou Hots",
+      "address": "320 W Main St, Rochester, NY 14608",
+      "city": "Rochester",
+      "rating": 4.2,
+      "price_level": "INEXPENSIVE",
+      "website_url": "https://nicktahous.com/",
+      "cuisine_type": "American",
+      "menu_items": [
+        {
+          "name": "Garbage Plate",
+          "description": "Rochester icon: macaroni salad, home fries, two cheeseburgers, hot sauce"
+        },
+        {
+          "name": "Hot Sauce",
+          "description": "Signature meat sauce"
+        }
+      ],
+      "price_range": "$",
+      "menu_available_online": true,
+      "scrape_failed": false
+    },
+    {
+      "place_id": "roc_002",
+      "name": "Good Luck",
+      "address": "50 Anderson Ave, Rochester, NY 14607",
+      "city": "Rochester",
+      "rating": 4.6,
+      "price_level": "EXPENSIVE",
+      "website_url": "https://restaurantgoodluck.com/",
+      "cuisine_type": "American",
+      "menu_items": [
+        {
+          "name": "Wood-Fired Octopus",
+          "description": "Charred, with smoked paprika"
+        },
+        {
+          "name": "Bone Marrow",
+          "description": "Roasted with grilled bread"
+        }
+      ],
+      "price_range": "$$$",
+      "menu_available_online": true,
+      "scrape_failed": false
+    },
+    {
+      "place_id": "alb_001",
+      "name": "Cafe Capriccio",
+      "address": "49 Grand St, Albany, NY 12202",
+      "city": "Albany",
+      "rating": 4.6,
+      "price_level": "EXPENSIVE",
+      "website_url": "https://cafecapriccio.com/",
+      "cuisine_type": "Italian",
+      "menu_items": [
+        {
+          "name": "Veal Marsala",
+          "description": "Veal scaloppine in marsala wine sauce"
+        },
+        {
+          "name": "Tagliatelle Bolognese",
+          "description": "House-made pasta with meat ragu"
+        }
+      ],
+      "price_range": "$$$",
+      "menu_available_online": true,
+      "scrape_failed": false
+    },
+    {
+      "place_id": "alb_002",
+      "name": "Jack's Oyster House",
+      "address": "42 State St, Albany, NY 12207",
+      "city": "Albany",
+      "rating": 4.4,
+      "price_level": "EXPENSIVE",
+      "website_url": "https://jacksoysterhouse.com/",
+      "cuisine_type": "Seafood",
+      "menu_items": [
+        {
+          "name": "Oysters Rockefeller",
+          "description": "Baked with spinach and cream"
+        },
+        {
+          "name": "Lobster Bisque",
+          "description": "Classic creamy soup"
+        }
+      ],
+      "price_range": "$$$",
+      "menu_available_online": true,
+      "scrape_failed": false
+    },
+    {
+      "place_id": "alb_003",
+      "name": "El Loco Mexican Cafe",
+      "address": "465 Madison Ave, Albany, NY 12208",
+      "city": "Albany",
+      "rating": 4.4,
+      "price_level": "MODERATE",
+      "website_url": "https://ellococafe.com/",
+      "cuisine_type": "Mexican",
+      "menu_items": [
+        {
+          "name": "Carne Asada",
+          "description": "Marinated grilled steak"
+        },
+        {
+          "name": "Enchiladas Suizas",
+          "description": "Chicken enchiladas with green sauce"
+        }
+      ],
+      "price_range": "$$",
+      "menu_available_online": true,
+      "scrape_failed": false
+    },
+    {
+      "place_id": "syr_999",
+      "name": "Mystery Restaurant",
+      "address": "999 Unknown St, Syracuse, NY",
+      "city": "Syracuse",
+      "rating": 4.0,
+      "price_level": "MODERATE",
+      "website_url": "https://blocked-site.example/",
+      "cuisine_type": "Unknown",
+      "menu_items": [],
+      "price_range": "$$",
+      "menu_available_online": false,
+      "scrape_failed": true
+    }
+  ],
+  "sample_html_pages": {
+    "_about": "Pass these to _extract_html_text() and _find_menu_links() directly to test parsing logic.",
+    "simple_menu_page": "<!DOCTYPE html><html><head><title>Joe's Pizza</title></head><body><nav>Home | About | Contact</nav><main><h1>Welcome to Joe's Pizza</h1><p>Authentic NY-style pizza since 1985.</p><h2>Our Menu</h2><ul><li>Cheese Slice \u2014 $3.50</li><li>Pepperoni Slice \u2014 $4.00</li><li>Sicilian Slice \u2014 $4.50</li><li>Whole Pie (16in) \u2014 $22.00</li></ul><h2>Hours</h2><p>Mon-Sun 11am-11pm</p></main><footer>Copyright 2026</footer></body></html>",
+    "html_with_menu_link": "<!DOCTYPE html><html><body><h1>Restaurant Foo</h1><p>Welcome! Check out our offerings.</p><a href=\"/menu\">Our Menu</a><a href=\"/menus/lunch.pdf\">Lunch Menu (PDF)</a><a href=\"/about\">About Us</a><a href=\"https://other-site.com/menu\">External</a></body></html>",
+    "cloudflare_blocked": "<html><head><title>Just a moment...</title></head><body><h1>Just a moment...</h1><div id=\"cf-challenge-platform\">Verifying you are human</div></body></html>",
+    "mostly_empty": "<html><body><script>x=1</script></body></html>"
+  },
+  "test_queries": [
+    {
+      "query": "BBQ in Syracuse",
+      "expected_top_name": "Dinosaur Bar-B-Que",
+      "expected_city": "Syracuse",
+      "expected_cuisine_substring": "BBQ"
+    },
+    {
+      "query": "authentic Italian dinner",
+      "expected_cuisines_any_of": [
+        "Italian"
+      ],
+      "min_results": 1
+    },
+    {
+      "query": "affordable Mexican food",
+      "expected_cuisines_any_of": [
+        "Mexican"
+      ],
+      "expected_price_in": [
+        "$",
+        "$$"
+      ]
+    },
+    {
+      "query": "upscale seafood Albany",
+      "prefer_city": "Albany",
+      "expected_cuisines_any_of": [
+        "Seafood"
+      ],
+      "expected_price_in": [
+        "$$$",
+        "$$$$"
+      ]
+    },
+    {
+      "query": "Garbage Plate",
+      "expected_top_name": "Nick Tahou Hots",
+      "expected_city": "Rochester"
+    },
+    {
+      "query": "fancy date night",
+      "expected_price_in": [
+        "$$$",
+        "$$$$"
+      ],
+      "min_results": 1
+    }
+  ],
+  "test_conversation": {
+    "_about": "Sequence of queries that should work together. Memory should let turn 2 resolve 'something else' to mean 'a different restaurant from turn 1's result set'.",
+    "turns": [
+      {
+        "user": "Find me Italian food in Syracuse"
+      },
+      {
+        "user": "What about something cheaper?"
+      },
+      {
+        "user": "Is there one that has pasta on the menu?"
+      }
+    ]
+  },
+  "mock_openai_responses": {
+    "_about": "Stand-ins for OpenAI Chat Completions responses. Use these to test the enrichment tool-call loop without burning API credits.",
+    "tool_call_request": {
+      "id": "chatcmpl-test1",
+      "model": "gpt-4o",
+      "choices": [
+        {
+          "index": 0,
+          "finish_reason": "tool_calls",
+          "message": {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "call_abc123",
+                "type": "function",
+                "function": {
+                  "name": "fetch_restaurant_content",
+                  "arguments": "{\"website_url\": \"https://www.dinosaurbarbque.com/\"}"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "final_enrichment_response": {
+      "id": "chatcmpl-test2",
+      "model": "gpt-4o",
+      "choices": [
+        {
+          "index": 0,
+          "finish_reason": "stop",
+          "message": {
+            "role": "assistant",
+            "content": "{\"cuisine_type\": \"BBQ\", \"menu_items\": [{\"name\": \"Pulled Pork Plate\", \"description\": \"Slow-smoked\"}, {\"name\": \"Brisket\", \"description\": \"Texas-style\"}], \"price_range\": \"$$\", \"menu_available_online\": true, \"scrape_failed\": false}"
+          }
+        }
+      ]
+    }
+  },
+  "ethics_test_cases": [
+    {
+      "name": "good_response",
+      "query": "Italian food in upstate NY",
+      "response": "I'd recommend Pastabilities in Syracuse ($$, 4.4\u2605) for casual Italian \u2014 their Spicy Hot Tomato Oil pasta is a signature dish. For a more upscale option, Cafe Capriccio in Albany ($$$, 4.6\u2605) is excellent.",
+      "retrieved_records_ids": [
+        "syr_002",
+        "alb_001"
+      ],
+      "expected_min_overall": 4,
+      "_note": "Diverse cities, two price points, transparent reasoning, faithful to records."
+    },
+    {
+      "name": "geographic_bias",
+      "query": "Italian food in upstate NY",
+      "response": "Pastabilities, Apizza Regionale, and Cafe Capriccio are great. Try Pastabilities first.",
+      "retrieved_records_ids": [
+        "syr_002",
+        "syr_003",
+        "alb_001"
+      ],
+      "expected_max_overall": 3,
+      "_note": "All Syracuse-leaning, no diversity, no reasoning given."
+    },
+    {
+      "name": "hallucination",
+      "query": "BBQ in Syracuse",
+      "response": "Dinosaur Bar-B-Que has won the James Beard Award three years in a row and is owned by celebrity chef Bobby Flay.",
+      "retrieved_records_ids": [
+        "syr_001"
+      ],
+      "expected_max_overall": 2,
+      "_note": "Information not in records \u2014 should fail faithfulness."
+    }
+  ]
+}
