@@ -26,7 +26,7 @@ st.set_page_config(
 # Logging
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("restaurant_app")
-
+"""
 # Optional heavy imports (graceful degradation if packages missing)
 try:
     import requests
@@ -53,7 +53,7 @@ try:
     OPENAI_AVAILABLE = True
 except ImportError:
     OPENAI_AVAILABLE = False
-
+"""
 # ═══════════════════════════════════════════════════════════════════════════════
 # 1  SHARED MOCK DATA  (same across Lauren's + Toby's notebooks)
 # ═══════════════════════════════════════════════════════════════════════════════
