@@ -26,7 +26,7 @@ st.set_page_config(
 # Logging
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("restaurant_app")
-"""
+
 # Optional heavy imports (graceful degradation if packages missing)
 try:
     import requests
@@ -53,7 +53,7 @@ try:
     OPENAI_AVAILABLE = True
 except ImportError:
     OPENAI_AVAILABLE = False
-"""
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # 1  SHARED MOCK DATA  (same across Lauren's + Toby's notebooks)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -758,13 +758,50 @@ if "last_query_trace" not in st.session_state:
     st.session_state.last_query_trace = {}
 
 
+# ── Helper: read a secret/env var ─────────────────────────────────────────────
+def _get_secret(name: str) -> str:
+    """Try st.secrets first, then os.environ, then sidebar session state."""
+    try:
+        return st.secrets[name]
+    except (KeyError, FileNotFoundError):
+        pass
+    val = os.environ.get(name, "")
+    if val:
+        return val
+    return ""
+
+
 def get_openai_client():
-    key = st.session_state.get("openai_key", "")
+    key = _get_secret("OPENAI_API_KEY")
     if not key:
-        key = os.environ.get("OPENAI_API_KEY", "")
+        key = st.session_state.get("openai_key", "")
     if not key or not OPENAI_AVAILABLE:
         return None
     return OpenAI(api_key=key)
+
+
+def _get_google_key() -> str:
+    key = _get_secret("GOOGLE_API_KEY")
+    if not key:
+        key = st.session_state.get("google_key", "")
+    return key
+
+
+# ── Auto-initialize pipeline on first load ────────────────────────────────────
+if not st.session_state.enriched_records:
+    # Run discovery with mock data
+    restaurants = run_discovery(google_api_key=_get_google_key())
+    st.session_state.restaurants = restaurants
+    # Enrich with mock (fast, no API needed) so chat works immediately
+    enriched = [structure_record(_mock_enrich(r)) for r in restaurants]
+    st.session_state.enriched_records = enriched
+    # Load into ChromaDB if available
+    if CHROMA_AVAILABLE:
+        try:
+            collection = get_chroma_collection()
+            load_records_into_chroma(enriched, collection)
+        except Exception:
+            pass
 
 
 # Sidebar: API keys & config
@@ -773,13 +810,23 @@ with st.sidebar:
     st.caption("Restaurant Finder — Upstate NY")
     st.divider()
 
+    # Show key inputs only if secrets aren't already configured
+    has_openai_secret = bool(_get_secret("OPENAI_API_KEY"))
+    has_google_secret = bool(_get_secret("GOOGLE_API_KEY"))
+
     st.subheader("API Keys")
-    openai_key = st.text_input("OpenAI API Key", type="password",
-                                key="openai_key",
-                                placeholder="sk-...")
-    google_key = st.text_input("Google Places API Key (optional)", type="password",
-                                key="google_key",
-                                placeholder="AIza...")
+    if has_openai_secret:
+        st.write("OpenAI API Key: ✅ configured via secrets")
+    else:
+        openai_key = st.text_input("OpenAI API Key", type="password",
+                                    key="openai_key",
+                                    placeholder="sk-...")
+    if has_google_secret:
+        st.write("Google Places Key: ✅ configured via secrets")
+    else:
+        google_key = st.text_input("Google Places API Key (optional)", type="password",
+                                    key="google_key",
+                                    placeholder="AIza...")
     st.divider()
 
     st.subheader("Pipeline Status")
@@ -818,7 +865,7 @@ with tab_discover:
 
     if st.button("Run Discovery", type="primary"):
         with st.spinner("Running discovery..."):
-            google_api_key = st.session_state.get("google_key", "") if not use_mock else ""
+            google_api_key = _get_google_key() if not use_mock else ""
             restaurants = run_discovery(google_api_key=google_api_key)
             st.session_state.restaurants = restaurants
             st.success(f"Found {len(restaurants)} restaurants across {len(TARGET_CITIES)} cities.")
