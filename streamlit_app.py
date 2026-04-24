@@ -26,7 +26,7 @@ st.set_page_config(
 # Logging
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("restaurant_app")
-"""
+
 # Optional heavy imports (graceful degradation if packages missing)
 try:
     import requests
@@ -53,7 +53,6 @@ try:
     OPENAI_AVAILABLE = True
 except ImportError:
     OPENAI_AVAILABLE = False
-"""
 # ═══════════════════════════════════════════════════════════════════════════════
 # 1  SHARED MOCK DATA  (same across Lauren's + Toby's notebooks)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -762,6 +761,11 @@ def get_openai_client():
     key = st.session_state.get("openai_key", "")
     if not key:
         key = os.environ.get("OPENAI_API_KEY", "")
+    if not key:
+        try:
+            key = st.secrets.get("OPENAI_API_KEY", "")
+        except Exception:
+            pass
     if not key or not OPENAI_AVAILABLE:
         return None
     return OpenAI(api_key=key)
@@ -818,7 +822,14 @@ with tab_discover:
 
     if st.button("Run Discovery", type="primary"):
         with st.spinner("Running discovery..."):
-            google_api_key = st.session_state.get("google_key", "") if not use_mock else ""
+            google_api_key = ""
+            if not use_mock:
+                google_api_key = st.session_state.get("google_key", "")
+                if not google_api_key:
+                    try:
+                        google_api_key = st.secrets.get("GOOGLE_PLACES_API_KEY", "")
+                    except Exception:
+                        pass
             restaurants = run_discovery(google_api_key=google_api_key)
             st.session_state.restaurants = restaurants
             st.success(f"Found {len(restaurants)} restaurants across {len(TARGET_CITIES)} cities.")
