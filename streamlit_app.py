@@ -790,13 +790,6 @@ with st.sidebar:
     st.caption("IST 488/688 Final Project — Upstate NY")
     st.divider()
 
-    st.subheader("⚙️ Settings")
-    openai_key = st.text_input("OpenAI API Key", type="password",
-                                key="openai_key", placeholder="sk-...")
-    google_key = st.text_input("Google Places Key (optional)", type="password",
-                                key="google_key", placeholder="AIza...")
-    st.divider()
-
     with st.expander("Pipeline Status"):
         st.write("Discovery:", "✅")
         st.write("Scraper:", "✅" if SCRAPER_AVAILABLE else "⚠️ limited")
