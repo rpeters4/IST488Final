@@ -353,7 +353,7 @@ CUISINE_MAP = {
     "seafood_restaurant": "Seafood", "chinese_restaurant": "Chinese",
     "mediterranean_restaurant": "Mediterranean", "fine_dining": "Fine Dining",
     "caribbean_restaurant": "Caribbean", "jamaican_restaurant": "Jamaican",
-    "indian_restaurant": "Indian", "north-indian": "paneer", "butter-chicken": "Indian",
+    "indian_restaurant": "Indian", "fusion_restaurant": "franco_korean", "pan-asian": "Fusion",
     }
 
 ENRICHMENT_SYSTEM_PROMPT = """You are a restaurant data enrichment assistant.
