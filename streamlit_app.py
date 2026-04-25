@@ -352,7 +352,9 @@ CUISINE_MAP = {
     "irish_pub": "Irish Pub", "mexican_restaurant": "Mexican",
     "seafood_restaurant": "Seafood", "chinese_restaurant": "Chinese",
     "mediterranean_restaurant": "Mediterranean", "fine_dining": "Fine Dining",
-}
+    "caribbean_restaurant": "Caribbean", "jamaican_restaurant": "Jamaican",
+    "indian_restaurant": "Indian", "north-indian": "paneer", "butter-chicken": "Indian",
+    }
 
 ENRICHMENT_SYSTEM_PROMPT = """You are a restaurant data enrichment assistant.
 Given a restaurant's basic metadata and scraped website text, extract:
