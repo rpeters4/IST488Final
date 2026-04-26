@@ -1062,7 +1062,7 @@ def food_finder_agent(query: str, location: str, client) -> dict:
 # 8  STREAMLIT UI — Multi-agent chat
 # ═══════════════════════════════════════════════════════════════════════════════
 
-APP_VERSION = "3.0"
+APP_VERSION = "3.1"
 APP_VERSION_LABEL = "Multi-Agent"
 
 # ── Session state defaults ────────────────────────────────────────────────────
