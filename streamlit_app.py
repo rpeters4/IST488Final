@@ -1104,7 +1104,7 @@ def get_openai_client():
 
 
 def _get_google_key() -> str:
-    key = _get_secret("GOOGLE_API_KEY")
+    key = _get_secret("GOOGLE_PLACES_API_KEY") or _get_secret("GOOGLE_API_KEY")
     if not key:
         key = st.session_state.get("google_key", "")
     return key
@@ -1185,7 +1185,7 @@ with st.sidebar:
     st.divider()
 
     has_openai_secret = bool(_get_secret("OPENAI_API_KEY"))
-    has_google_secret = bool(_get_secret("GOOGLE_API_KEY"))
+    has_google_secret = bool(_get_secret("GOOGLE_PLACES_API_KEY") or _get_secret("GOOGLE_API_KEY"))
 
     st.subheader("API Keys")
     if has_openai_secret:
