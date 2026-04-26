@@ -28,30 +28,33 @@ logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("restaurant_app")
 
 # Optional heavy imports (graceful degradation if packages missing)
+# NOTE: we catch Exception (not just ImportError) because transitive
+# dependencies like protobuf/grpc can throw TypeError at import time
+# on certain Python versions used by Streamlit Cloud.
 try:
     import requests
     from bs4 import BeautifulSoup
     import trafilatura
     SCRAPER_AVAILABLE = True
-except ImportError:
+except Exception:
     SCRAPER_AVAILABLE = False
 
 try:
     import pdfplumber
     PDF_AVAILABLE = True
-except ImportError:
+except Exception:
     PDF_AVAILABLE = False
 
 try:
     import chromadb
     CHROMA_AVAILABLE = True
-except ImportError:
+except Exception:
     CHROMA_AVAILABLE = False
 
 try:
     from openai import OpenAI
     OPENAI_AVAILABLE = True
-except ImportError:
+except Exception:
     OPENAI_AVAILABLE = False
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -350,23 +353,66 @@ CUISINE_MAP = {
     "irish_pub": "Irish Pub", "mexican_restaurant": "Mexican",
     "seafood_restaurant": "Seafood", "chinese_restaurant": "Chinese",
     "mediterranean_restaurant": "Mediterranean", "fine_dining": "Fine Dining",
-}
+    "caribbean_restaurant": "Caribbean", "jamaican_restaurant": "Jamaican",
+    "indian_restaurant": "Indian", "fusion_restaurant": "Fusion",
+    "vegetarian_restaurant": "Vegetarian", "steakhouse_restaurant": "Steakhouse",
+    }
 
 ENRICHMENT_SYSTEM_PROMPT = """You are a restaurant data enrichment assistant.
-Given a restaurant's basic metadata and scraped website text, extract:
-- cuisine_type (e.g. "Italian", "BBQ", "Mexican-American")
-- menu_items: 3-8 items as [{"name": str, "description": str}]
-- price_range: one of "$", "$$", "$$$", "$$$$"
-- menu_available_online: true/false
+Your task is to extract structured information from restaurant metadata and scraped website text.
 
-If content is empty or scrape failed, infer from the restaurant name and type.
-Respond ONLY with valid JSON. No markdown, no prose."""
+Rules:
+- Be accurate and conservative - do not hallucinate.
+- If information is unclear, make a reasonable inference based on name, type, or common cuisine patterns.
+- Keep outputs simple and realistic. 
+
+Extract:
+- cuisine_type: short label (e.g., "Italian", "BBQ", "Mexican-American", "Caribbean", "Indian")
+- menu_items: 3-6 realistic items as [{"name": str, "description": str}]
+- Descriptions should be short (5-12 words)
+- menu_available_online: true/false 
+
+If scraping failed:
+- Infer cuisine from name or restaurant type 
+- Use generic but plausible menu items 
+
+Respond ONLY with valid JSON. No markdown. No explanations."""
+
+
+# Given a restaurant's basic metadata and scraped website text, extract:
+# - cuisine_type (e.g. "Italian", "BBQ", "Mexican-American")
+# - menu_items: 3-8 items as [{"name": str, "description": str}]
+# - price_range: one of "25", "50", "100", "1000"
+# - menu_available_online: true/false
+
+#--If content is empty or scrape failed, infer from the restaurant name and type.
+#--Respond ONLY with valid JSON. No markdown, no prose."""
 
 QUERY_SYSTEM_PROMPT = """You help users find restaurants in upstate NY (Syracuse, Rochester, Albany).
-Answer based ONLY on the provided restaurant records. If no good matches, say so honestly.
-For each recommendation, mention: name, city, cuisine, price range, rating, and ONE concrete reason
-why it fits the query (e.g., a specific menu item or attribute).
-Be concise — 2-4 sentences per recommendation."""
+Answer based ONLY on the provided restaurant records. If no good matches, say so honestly. Do not invent details.
+
+Instructions:
+- Select the most relevant restaurants based on the user's query.
+- Prioritize strong matches (cuisine, price, location, or menu items).
+- If few matches exist. say so honestly.
+
+For each recommendation include:
+- Name
+- City
+- Cuisine type
+- Price range
+- Rating (if available)
+- ONE specfic reason (menu item or attribute)
+
+Style:
+- 2-3 recommendations maximum
+- 2-3 sentences per recommendation 
+- Clear, concise, and helpful
+
+If no good matches:
+- Say: "I couldn't find strong matches, but here are the closest options."
+
+Do not include any information not present in the records."""
 
 ETHICS_RUBRIC_PROMPT = """You are an evaluator scoring restaurant recommendation responses on five ethical dimensions.
 
@@ -393,19 +439,37 @@ Respond ONLY with this JSON (no prose, no markdown):
 }"""
 
 CRITIQUE_PROMPT = """You are a strict reviewer of restaurant recommendation responses.
-Identify issues with the response below. Look for:
-- Did it actually answer the user's query?
-- Are claims supported by the retrieved records (no hallucination)?
-- Is the reasoning for each recommendation clear?
-- Is it concise without sacrificing usefulness?
-- Is it diverse where the query allows (cities, price points, cuisines)?
 
-Respond ONLY with this JSON (no prose, no markdown):
+Evaluate the response carefully. 
+
+Check:
+- Does it directly answer the user's query?
+- Are all claims supported by the provided records?
+- Is reasoning clear and specific?
+- Is the response concise but useful?
+- Is there diversity when appropriate (city, price, cuisine)?
+
+Be critical - flag even small issues. 
+
+Respond ONLY with valid JSON (no prose, no markdown):
 {
-  "needs_revision": bool,
-  "issues": [str],
-  "suggestions": [str]
-}"""
+ "needs_revision": bool,
+ "issues": [str],
+ "suggestions": [str]
+ }
+
+ Rules:
+ - needs_revision = true if ANY meaningful issue exists
+ - Issues should be specific and actionable
+ - Suggestions should clearly improve the response"""
+
+
+# Identify issues with the response below. Look for:
+# - Did it actually answer the user's query?
+# - Are claims supported by the retrieved records (no hallucination)?
+# - Is the reasoning for each recommendation clear?
+# - Is it concise without sacrificing usefulness?
+# - Is it diverse where the query allows (cities, price points, cuisines)?
 
 
 def _mock_enrich(r: dict) -> dict:
@@ -741,21 +805,19 @@ def run_tests(fixtures_path: Optional[str] = None) -> list:
     return results
 
 
+
 # ═══════════════════════════════════════════════════════════════════════════════
-# 7  STREAMLIT UI
+# 7  STREAMLIT UI — Single-page seamless flow
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # ── Session state defaults ────────────────────────────────────────────────────
-if "restaurants" not in st.session_state:
-    st.session_state.restaurants = []
-if "enriched_records" not in st.session_state:
-    st.session_state.enriched_records = []
-if "conversation_history" not in st.session_state:
-    st.session_state.conversation_history = []
-if "chat_messages" not in st.session_state:
-    st.session_state.chat_messages = []
-if "last_query_trace" not in st.session_state:
-    st.session_state.last_query_trace = {}
+for _key, _default in [
+    ("restaurants", []), ("enriched_records", []),
+    ("conversation_history", []), ("chat_messages", []),
+    ("last_query_trace", {}), ("pipeline_ran", False),
+]:
+    if _key not in st.session_state:
+        st.session_state[_key] = _default
 
 
 # ── Helper: read a secret/env var ─────────────────────────────────────────────
@@ -787,27 +849,30 @@ def _get_google_key() -> str:
     return key
 
 
-# ── Auto-initialize pipeline on first load ────────────────────────────────────
-if not st.session_state.enriched_records:
-    # Run discovery with mock data
-    restaurants = run_discovery(google_api_key=_get_google_key())
-    st.session_state.restaurants = restaurants
-    # Enrich with mock (fast, no API needed) so chat works immediately
+def _auto_enrich(restaurants):
+    """Run mock enrichment + optional ChromaDB load in one shot."""
     enriched = [structure_record(_mock_enrich(r)) for r in restaurants]
-    st.session_state.enriched_records = enriched
-    # Load into ChromaDB if available
     if CHROMA_AVAILABLE:
         try:
             collection = get_chroma_collection()
             load_records_into_chroma(enriched, collection)
         except Exception:
             pass
+    return enriched
 
 
-# Sidebar: API keys & config
+# ── Auto-initialize pipeline on first load ────────────────────────────────────
+if not st.session_state.enriched_records:
+    restaurants = run_discovery(google_api_key=_get_google_key())
+    st.session_state.restaurants = restaurants
+    st.session_state.enriched_records = _auto_enrich(restaurants)
+    st.session_state.pipeline_ran = True
+
+
+# ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.title("IST 488 Final Project")
-    st.caption("Restaurant Finder — Upstate NY")
+    st.title("🍽️ Restaurant Finder")
+    st.caption("IST 488/688 Final Project — Upstate NY")
     st.divider()
 
     # Show key inputs only if secrets aren't already configured
@@ -827,369 +892,285 @@ with st.sidebar:
         google_key = st.text_input("Google Places API Key (optional)", type="password",
                                     key="google_key",
                                     placeholder="AIza...")
+
+    with st.expander("Pipeline Status"):
+        st.write("Discovery:", "✅")
+        st.write("Scraper:", "✅" if SCRAPER_AVAILABLE else "⚠️ limited")
+        st.write("OpenAI:", "✅" if OPENAI_AVAILABLE else "⚠️ missing")
+        st.write("ChromaDB:", "✅" if CHROMA_AVAILABLE else "⚠️ missing")
+        st.caption(f"Records: {len(st.session_state.enriched_records)}")
+
+    with st.expander("🧪 Run Tests"):
+        if st.button("Run All Tests"):
+            results = run_tests("test_fixtures.json")
+            passed = sum(1 for r in results if r["passed"] is True)
+            total = len(results)
+            st.write(f"**{passed}/{total}** passed")
+            for r in results:
+                icon = "✅" if r["passed"] is True else ("⏭️" if r["passed"] is None else "❌")
+                st.caption(f"{icon} {r['name']}")
+
+
+# ── Custom CSS ────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+    .restaurant-card {
+        background: linear-gradient(135deg, #1e1e2e 0%, #2d2d44 100%);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 12px;
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .restaurant-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+    }
+    .restaurant-name {
+        font-size: 1.2em;
+        font-weight: 700;
+        color: #e0e0ff;
+        margin-bottom: 4px;
+    }
+    .restaurant-meta {
+        color: #a0a0c0;
+        font-size: 0.9em;
+    }
+    .cuisine-badge {
+        display: inline-block;
+        background: rgba(99, 102, 241, 0.25);
+        color: #a5b4fc;
+        padding: 2px 10px;
+        border-radius: 20px;
+        font-size: 0.8em;
+        margin-right: 6px;
+    }
+    .price-badge {
+        display: inline-block;
+        background: rgba(34, 197, 94, 0.2);
+        color: #86efac;
+        padding: 2px 10px;
+        border-radius: 20px;
+        font-size: 0.8em;
+    }
+    .hero-title {
+        font-size: 2.2em;
+        font-weight: 800;
+        background: linear-gradient(135deg, #a5b4fc, #818cf8, #6366f1);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 0;
+    }
+    .hero-sub {
+        color: #94a3b8;
+        font-size: 1.1em;
+        margin-top: 0;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# ── Hero ──────────────────────────────────────────────────────────────────────
+st.markdown('<p class="hero-title">Find Your Next Meal</p>', unsafe_allow_html=True)
+st.markdown('<p class="hero-sub">Discover restaurants across Syracuse, Rochester & Albany</p>', unsafe_allow_html=True)
+st.write("")
+
+# ── Step 1: Preferences ──────────────────────────────────────────────────────
+col1, col2, col3 = st.columns(3)
+with col1:
+    city_pref = st.selectbox("📍 City", ["All Cities", "Syracuse", "Rochester", "Albany"])
+with col2:
+    all_cuisines = ["Any Cuisine"] + sorted(CUISINE_MAP.values())
+    cuisine_pref = st.selectbox("🍴 Cuisine", all_cuisines)
+with col3:
+    price_pref = st.selectbox("💰 Budget", ["Any Price", "$", "$$", "$$$", "$$$$"])
+
+if st.button("🔍 Find Restaurants", type="primary", use_container_width=True):
+    with st.spinner("Discovering and enriching restaurants..."):
+        google_api_key = _get_google_key()
+        restaurants = run_discovery(google_api_key=google_api_key)
+        st.session_state.restaurants = restaurants
+        st.session_state.enriched_records = _auto_enrich(restaurants)
+        st.session_state.pipeline_ran = True
+        st.session_state.chat_messages = []
+        st.session_state.conversation_history = []
+    st.rerun()
+
+# ── Step 2: Results ───────────────────────────────────────────────────────────
+if st.session_state.pipeline_ran and st.session_state.enriched_records:
+    records = st.session_state.enriched_records
+
+    # Apply filters
+    filtered = records
+    if city_pref != "All Cities":
+        filtered = [r for r in filtered if r.get("city") == city_pref]
+    if cuisine_pref != "Any Cuisine":
+        filtered = [r for r in filtered if r.get("cuisine_type") == cuisine_pref]
+    if price_pref != "Any Price":
+        filtered = [r for r in filtered if r.get("price_range") == price_pref]
+
+    filtered = sorted(filtered, key=lambda x: -(x.get("rating") or 0))
+
     st.divider()
 
-    st.subheader("Pipeline Status")
-    st.write("Discovery Agent (Lauren):", "✅" if True else "❌")
-    st.write("Scraper (Ryan):", "✅" if SCRAPER_AVAILABLE else "⚠️ requests/bs4 missing")
-    st.write("Agents (Leytisha):", "✅" if OPENAI_AVAILABLE else "⚠️ openai missing")
-    st.write("ChromaDB (Toby):", "✅" if CHROMA_AVAILABLE else "⚠️ chromadb missing")
+    # Summary metrics
+    if filtered:
+        avg_rating = sum(r.get("rating") or 0 for r in filtered) / len(filtered)
+        cities_found = len(set(r.get("city", "") for r in filtered))
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Restaurants Found", len(filtered))
+        m2.metric("Average Rating", f"{avg_rating:.1f} ⭐")
+        m3.metric("Cities", cities_found)
+        st.write("")
+
+    # Restaurant cards
+    if not filtered:
+        st.info("No restaurants match your filters. Try broadening your search.")
+    else:
+        for r in filtered:
+            rating = r.get("rating") or 0
+            stars = "⭐" * int(rating)
+            cuisine = r.get("cuisine_type", "Unknown")
+            price = r.get("price_range", "$$")
+            city = r.get("city", "")
+            address = r.get("address", "")
+            items = r.get("menu_items", [])
+
+            st.markdown(f"""
+            <div class="restaurant-card">
+                <div class="restaurant-name">{r['name']}</div>
+                <div class="restaurant-meta">
+                    {rating:.1f} {stars} &nbsp;•&nbsp; {address}
+                </div>
+                <div style="margin-top:8px;">
+                    <span class="cuisine-badge">{cuisine}</span>
+                    <span class="price-badge">{price}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            with st.expander(f"More about {r['name']}"):
+                st.write(f"**{r['name']}** is a {cuisine.lower()} restaurant in {city} "
+                         f"with a {rating:.1f}/5.0 rating. "
+                         f"It falls in the {price} price range"
+                         f"{' and has an online menu available' if r.get('menu_available_online') else ''}.")
+                if items:
+                    st.write("**Menu Highlights:**")
+                    for item in items[:5]:
+                        if isinstance(item, dict):
+                            st.write(f"• **{item.get('name', '')}** — {item.get('description', '')}")
+                        else:
+                            st.write(f"• {item}")
+                if r.get("website_url"):
+                    st.write(f"🌐 [Visit Website]({r['website_url']})")
+
+    # ── Step 3: Chat ──────────────────────────────────────────────────────────
     st.divider()
+    st.subheader("💬 Ask About These Restaurants")
+    st.caption("Ask follow-up questions — e.g. 'Which has the best seafood?' or 'Something cheap in Rochester?'")
 
-    st.caption("Records loaded: " + str(len(st.session_state.enriched_records)))
-    if st.session_state.enriched_records:
-        cities = {}
-        for r in st.session_state.enriched_records:
-            c = r.get("city", "Unknown")
-            cities[c] = cities.get(c, 0) + 1
-        for city, count in sorted(cities.items()):
-            st.caption(f"  {city}: {count}")
-
-
-# Main tabs
-tab_discover, tab_scrape, tab_chat, tab_data, tab_tests = st.tabs([
-    "1. Discovery", "2. Scrape & Enrich", "3. Query Chat", "4. Data Explorer", "5. Tests"
-])
-
-
-# Tab 1: Discovery
-with tab_discover:
-    st.header("Discovery Agent (Lauren)")
-    st.write("Pull restaurants from Google Places API or load mock data.")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        use_mock = st.checkbox("Use mock data (no API key needed)", value=True)
-    with col2:
-        results_per_city = st.slider("Results per city", 3, 10, 7)
-
-    if st.button("Run Discovery", type="primary"):
-        with st.spinner("Running discovery..."):
-            google_api_key = _get_google_key() if not use_mock else ""
-            restaurants = run_discovery(google_api_key=google_api_key)
-            st.session_state.restaurants = restaurants
-            st.success(f"Found {len(restaurants)} restaurants across {len(TARGET_CITIES)} cities.")
-
-    if st.session_state.restaurants:
-        st.subheader(f"Results ({len(st.session_state.restaurants)} restaurants)")
-        city_filter = st.selectbox("Filter by city", ["All"] + TARGET_CITIES,
-                                   key="disc_city_filter")
-        display = st.session_state.restaurants
-        if city_filter != "All":
-            city_short = city_filter.split(",")[0]
-            display = [r for r in display if r.get("city") == city_short]
-
-        for r in display:
-            with st.expander(f"{r['name']} — {r['city']}"):
-                st.write("Address:", r.get("address", "N/A"))
-                st.write("Rating:", r.get("rating", "N/A"),
-                         "| Reviews:", r.get("user_rating_count", "N/A"))
-                st.write("Price Level:", r.get("price_level", "N/A"))
-                st.write("Website:", r.get("website_url") or "None")
-                st.write("Types:", ", ".join(r.get("types", [])))
-
-
-# Tab 2: Scrape & Enrich
-with tab_scrape:
-    st.header("Scraper (Ryan) + Enrichment Agent (Leytisha)")
-
-    if not st.session_state.restaurants:
-        st.info("Run the Discovery step first to load restaurants.")
-    else:
-        col1, col2 = st.columns(2)
-        with col1:
-            enrich_mode = st.selectbox(
-                "Enrichment mode",
-                ["Mock (no API key needed)", "OpenAI GPT-4o (requires key)"],
-            )
-        with col2:
-            max_scrape = st.slider("Max restaurants to scrape", 1, len(st.session_state.restaurants),
-                                   min(5, len(st.session_state.restaurants)))
-
-        single_url = st.text_input("Or test a single URL:", placeholder="https://...")
-
-        col_a, col_b = st.columns(2)
-        with col_a:
-            if single_url and st.button("Scrape Single URL"):
-                with st.spinner(f"Fetching {single_url}..."):
-                    result = fetch_restaurant_content(single_url, use_cache=True)
-                st.write("Status:", result["status"])
-                st.write("Content type:", result["content_type"])
-                if result["content"]:
-                    st.text_area("Extracted content (first 2000 chars):",
-                                 result["content"][:2000], height=200)
-                else:
-                    st.warning(f"No content. Error: {result.get('error')}")
-
-        with col_b:
-            if st.button("Run Enrich Pipeline", type="primary"):
-                client = get_openai_client()
-                use_openai = (enrich_mode.startswith("OpenAI") and client is not None)
-                if enrich_mode.startswith("OpenAI") and client is None:
-                    st.warning("No OpenAI key found — falling back to mock enrichment.")
-
-                progress = st.progress(0)
-                status_text = st.empty()
-                enriched = []
-
-                for i, restaurant in enumerate(st.session_state.restaurants[:max_scrape]):
-                    status_text.text(f"Processing {restaurant['name']}...")
-                    progress.progress((i + 1) / max_scrape)
-
-                    if use_openai:
-                        scraped = fetch_restaurant_content(
-                            restaurant.get("website_url", ""), use_cache=True
-                        ) if restaurant.get("website_url") else {"content": "", "status": "no_url"}
-                        try:
-                            record = enrich_with_openai(restaurant, scraped.get("content", ""), client)
-                        except Exception as e:
-                            st.warning(f"OpenAI failed for {restaurant['name']}: {e}")
-                            record = _mock_enrich(restaurant)
-                    else:
-                        record = _mock_enrich(restaurant)
-
-                    enriched.append(structure_record(record))
-
-                # Fill remaining restaurants with mock enrichment
-                for restaurant in st.session_state.restaurants[max_scrape:]:
-                    enriched.append(structure_record(_mock_enrich(restaurant)))
-
-                # Load into ChromaDB
-                if CHROMA_AVAILABLE:
-                    collection = get_chroma_collection()
-                    added = load_records_into_chroma(enriched, collection)
-                    st.info(f"ChromaDB: {added} new records added to vector store.")
-
-                st.session_state.enriched_records = enriched
-                progress.empty()
-                status_text.empty()
-                st.success(f"Enriched {len(enriched)} restaurants.")
-
-        if st.session_state.enriched_records:
-            st.subheader("Enriched Records")
-            for r in st.session_state.enriched_records:
-                with st.expander(f"{r['name']} — {r['city']} | {r.get('cuisine_type')} | {r.get('price_range')}"):
-                    st.write("Rating:", r.get("rating"))
-                    st.write("Cuisine:", r.get("cuisine_type"))
-                    st.write("Price Range:", r.get("price_range"))
-                    st.write("Menu Available Online:", r.get("menu_available_online"))
-                    st.write("Scrape Failed:", r.get("scrape_failed"))
-                    items = r.get("menu_items", [])
-                    if items:
-                        st.write("Menu Items:")
-                        for item in items:
-                            if isinstance(item, dict):
-                                st.write(f"  • {item.get('name', '')}: {item.get('description', '')}")
-                            else:
-                                st.write(f"  • {item}")
-
-
-# Tab 3: Query Chat 
-with tab_chat:
-    st.header("Query Agent (Leytisha)")
-
-    if not st.session_state.enriched_records:
-        st.info("Run the Scrape & Enrich step first to populate the restaurant database.")
-    else:
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            use_reflection = st.checkbox("Self-Reflection (Req 5)", value=False)
-        with col2:
-            run_ethics = st.checkbox("Ethics Evaluation (Req 4)", value=False)
-        with col3:
-            use_chroma = st.checkbox("Use ChromaDB (Toby)", value=CHROMA_AVAILABLE)
-
-        if st.button("Clear Chat History"):
+    # Agent options
+    with st.expander("⚙️ Agent Options"):
+        a1, a2, a3 = st.columns(3)
+        with a1:
+            use_reflection = st.checkbox("Self-Reflection", value=False)
+        with a2:
+            run_ethics = st.checkbox("Ethics Evaluation", value=False)
+        with a3:
+            use_chroma = st.checkbox("ChromaDB Retrieval", value=CHROMA_AVAILABLE)
+        if st.button("Clear Chat"):
             st.session_state.chat_messages = []
             st.session_state.conversation_history = []
             st.session_state.last_query_trace = {}
             st.rerun()
 
-        for msg in st.session_state.chat_messages:
-            with st.chat_message(msg["role"]):
-                st.write(msg["content"])
+    # Chat history
+    for msg in st.session_state.chat_messages:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
 
-        user_input = st.chat_input("Ask about restaurants in Syracuse, Rochester, or Albany...")
+    # Chat input
+    user_input = st.chat_input("Ask about restaurants...")
+    if user_input:
+        client = get_openai_client()
+        with st.chat_message("user"):
+            st.write(user_input)
+        st.session_state.chat_messages.append({"role": "user", "content": user_input})
 
-        if user_input:
-            client = get_openai_client()
+        with st.chat_message("assistant"):
+            with st.spinner("Finding the best match..."):
+                chat_records = st.session_state.enriched_records
 
-            with st.chat_message("user"):
-                st.write(user_input)
-            st.session_state.chat_messages.append({"role": "user", "content": user_input})
-
-            with st.chat_message("assistant"):
-                with st.spinner("Finding restaurants..."):
-                    records = st.session_state.enriched_records
-
-                    if not client:
-                        # Fallback: simple keyword search, no LLM
-                        retrieved = simple_retrieve(user_input, records, k=3)
-                        answer = "**Top matches (no OpenAI key — keyword search only):**\n\n"
-                        for r in retrieved:
-                            answer += (
-                                f"**{r['name']}** ({r['city']}) — {r.get('cuisine_type', 'N/A')}, "
-                                f"{r.get('price_range', '$$')}, Rating: {r.get('rating', 'N/A')}\n\n"
-                            )
-                        st.write(answer)
-                        st.session_state.chat_messages.append(
-                            {"role": "assistant", "content": answer}
+                if not client:
+                    retrieved = simple_retrieve(user_input, chat_records, k=3)
+                    answer = "**Top matches (keyword search):**\n\n"
+                    for r in retrieved:
+                        answer += (
+                            f"**{r['name']}** ({r['city']}) — {r.get('cuisine_type', 'N/A')}, "
+                            f"{r.get('price_range', '$$')}, Rating: {r.get('rating', 'N/A')}\n\n"
                         )
+                    st.write(answer)
+                    st.session_state.chat_messages.append(
+                        {"role": "assistant", "content": answer})
+                else:
+                    if use_chroma and CHROMA_AVAILABLE:
+                        try:
+                            collection = get_chroma_collection()
+                            chroma_results = chroma_search(user_input, collection, k=5)
+                            if chroma_results:
+                                chat_records = chroma_results
+                        except Exception:
+                            pass
+
+                    if use_reflection:
+                        trace = query_with_reflection(
+                            user_input, chat_records,
+                            st.session_state.conversation_history, client)
+                        answer = trace["final_response"]
+                        st.session_state.last_query_trace = trace
                     else:
-                        # Use ChromaDB for retrieval if available
-                        if use_chroma and CHROMA_AVAILABLE:
-                            try:
-                                collection = get_chroma_collection()
-                                chroma_results = chroma_search(user_input, collection, k=5)
-                                if chroma_results:
-                                    records = chroma_results
-                            except Exception:
-                                pass
+                        answer = query_agent(
+                            user_input, chat_records,
+                            st.session_state.conversation_history, client)
+                        st.session_state.last_query_trace = {}
 
-                        if use_reflection:
-                            trace = query_with_reflection(
-                                user_input, records,
-                                st.session_state.conversation_history,
-                                client
-                            )
-                            answer = trace["final_response"]
-                            st.session_state.last_query_trace = trace
-                        else:
-                            answer = query_agent(
-                                user_input, records,
-                                st.session_state.conversation_history,
-                                client
-                            )
-                            st.session_state.last_query_trace = {}
+                    st.write(answer)
+                    st.session_state.chat_messages.append(
+                        {"role": "assistant", "content": answer})
 
-                        st.write(answer)
-                        st.session_state.chat_messages.append(
-                            {"role": "assistant", "content": answer}
-                        )
+                    if run_ethics:
+                        with st.spinner("Running ethics evaluation..."):
+                            retrieved_for_ethics = simple_retrieve(user_input, chat_records)
+                            ethics = evaluate_ethics(
+                                user_input, answer, retrieved_for_ethics, client)
+                        with st.expander("📊 Ethics Rubric Scores"):
+                            if "error" not in ethics:
+                                for dim in ["geographic_fairness", "price_diversity",
+                                             "cuisine_respect", "transparency", "faithfulness"]:
+                                    d = ethics.get(dim, {})
+                                    st.write(f"**{dim.replace('_', ' ').title()}**: "
+                                             f"{d.get('score', '?')}/5 — {d.get('note', '')}")
+                                st.write(f"**Overall**: {ethics.get('overall', '?')}/5")
+                            else:
+                                st.write("Evaluation failed:", ethics.get("error"))
 
-                        if run_ethics:
-                            with st.spinner("Running ethics evaluation..."):
-                                retrieved_for_ethics = simple_retrieve(user_input, records)
-                                ethics = evaluate_ethics(
-                                    user_input, answer, retrieved_for_ethics, client
-                                )
-                            with st.expander("Ethics Rubric Scores"):
-                                if "error" not in ethics:
-                                    dims = ["geographic_fairness", "price_diversity",
-                                            "cuisine_respect", "transparency", "faithfulness"]
-                                    for dim in dims:
-                                        d = ethics.get(dim, {})
-                                        score = d.get("score", "?")
-                                        note = d.get("note", "")
-                                        st.write(f"**{dim.replace('_', ' ').title()}**: {score}/5 — {note}")
-                                    st.write(f"**Overall**: {ethics.get('overall', '?')}/5")
-                                    issues = ethics.get("issues", [])
-                                    if issues:
-                                        st.write("Issues:")
-                                        for issue in issues:
-                                            st.write(f"  • {issue}")
-                                else:
-                                    st.write("Ethics evaluation failed:", ethics.get("error"))
+        if use_reflection and st.session_state.last_query_trace:
+            trace = st.session_state.last_query_trace
+            with st.expander("🔄 Self-Reflection Trace"):
+                st.write("**Revised:**", trace.get("revised", False))
+                st.write("**Initial:**", trace.get("initial_response", ""))
+                critique = trace.get("critique", {})
+                if critique.get("issues"):
+                    st.write("**Issues:**")
+                    for issue in critique["issues"]:
+                        st.write(f"  • {issue}")
 
-            if use_reflection and st.session_state.last_query_trace:
-                trace = st.session_state.last_query_trace
-                with st.expander("Self-Reflection Trace"):
-                    st.write("**Revised:**", trace.get("revised", False))
-                    st.write("**Initial Response:**")
-                    st.write(trace.get("initial_response", ""))
-                    critique = trace.get("critique", {})
-                    if critique.get("issues"):
-                        st.write("**Critique Issues:**")
-                        for issue in critique["issues"]:
-                            st.write(f"  • {issue}")
-                    if trace.get("revised"):
-                        st.write("**Final (Revised) Response:**")
-                        st.write(trace.get("final_response", ""))
-
-
-# Tab 4: Data Explorer
-with tab_data:
-    st.header("Data Explorer")
-
-    if not st.session_state.enriched_records:
-        st.info("Run the Scrape & Enrich step to populate data.")
-    else:
-        records = st.session_state.enriched_records
-
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            city_opts = ["All"] + sorted(set(r.get("city", "") for r in records))
-            city_sel = st.selectbox("City", city_opts, key="explorer_city")
-        with col2:
-            cuisine_opts = ["All"] + sorted(set(r.get("cuisine_type", "Unknown") for r in records))
-            cuisine_sel = st.selectbox("Cuisine", cuisine_opts, key="explorer_cuisine")
-        with col3:
-            price_opts = ["All", "$", "$$", "$$$", "$$$$"]
-            price_sel = st.selectbox("Price Range", price_opts, key="explorer_price")
-
-        filtered = records
-        if city_sel != "All":
-            filtered = [r for r in filtered if r.get("city") == city_sel]
-        if cuisine_sel != "All":
-            filtered = [r for r in filtered if r.get("cuisine_type") == cuisine_sel]
-        if price_sel != "All":
-            filtered = [r for r in filtered if r.get("price_range") == price_sel]
-
-        st.write(f"Showing {len(filtered)} of {len(records)} restaurants")
-
-        if filtered:
-            col_a, col_b = st.columns(2)
-            with col_a:
-                avg_rating = sum(r.get("rating") or 0 for r in filtered) / len(filtered)
-                st.metric("Average Rating", f"{avg_rating:.2f}")
-            with col_b:
-                with_menu = sum(1 for r in filtered if r.get("menu_available_online"))
-                st.metric("With Online Menu", f"{with_menu}/{len(filtered)}")
-
-            st.divider()
-            for r in sorted(filtered, key=lambda x: -(x.get("rating") or 0)):
-                col_left, col_right = st.columns([3, 1])
-                with col_left:
-                    st.write(f"**{r['name']}** — {r.get('city')}")
-                    st.caption(f"{r.get('cuisine_type', 'N/A')} | {r.get('price_range', '$$')} | {r.get('address', '')}")
-                with col_right:
-                    rating = r.get("rating") or 0
-                    st.metric("Rating", f"{rating:.1f} ⭐")
-
-        st.divider()
-        if st.button("Export All Records as JSON"):
-            json_str = json.dumps(st.session_state.enriched_records, indent=2)
-            st.download_button(
-                "Download restaurants.json",
-                data=json_str,
-                file_name="restaurants_enriched.json",
-                mime="application/json",
-            )
-
-
-# Tab 5: Tests 
-with tab_tests:
-    st.header("Test Suite (Lauren, Ryan, Leytisha, Toby)")
-    st.write("Runs the shared test suite against `test_fixtures.json` if available, otherwise uses inline stubs.")
-
-    fixtures_path = st.text_input("Path to test_fixtures.json (optional):",
-                                  value="test_fixtures.json")
-
-    if st.button("Run All Tests", type="primary"):
-        with st.spinner("Running tests..."):
-            results = run_tests(fixtures_path if fixtures_path else None)
-
-        passed = sum(1 for r in results if r["passed"] is True)
-        skipped = sum(1 for r in results if r["passed"] is None)
-        failed = sum(1 for r in results if r["passed"] is False)
-        total = len(results)
-
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Passed", f"{passed}/{total}", delta=None)
-        col2.metric("Skipped", skipped)
-        col3.metric("Failed", failed)
-
-        st.divider()
-        for r in results:
-            icon = "✅" if r["passed"] is True else ("⏭️" if r["passed"] is None else "❌")
-            st.write(f"{icon} **{r['name']}**", "—", r["detail"] if r["detail"] else "")
+    # ── Data Export ───────────────────────────────────────────────────────────
+    st.divider()
+    with st.expander("📥 Export Data"):
+        json_str = json.dumps(st.session_state.enriched_records, indent=2)
+        st.download_button(
+            "Download restaurants.json",
+            data=json_str,
+            file_name="restaurants_enriched.json",
+            mime="application/json",
+        )
