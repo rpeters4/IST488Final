@@ -525,6 +525,8 @@ def structure_record(enriched: dict) -> dict:
         "menu_available_online": bool(enriched.get("menu_available_online",
                                       e.get("menu_available_online", False))),
         "scrape_failed": bool(enriched.get("scrape_failed", e.get("scrape_failed", False))),
+        "_scrape_status": enriched.get("_scrape_status", "unknown"),
+        "_enrichment_source": enriched.get("_enrichment_source", "mock"),
     }
 
 
@@ -810,15 +812,15 @@ def run_tests(fixtures_path: Optional[str] = None) -> list:
 # 7  STREAMLIT UI — Single-page seamless flow
 # ═══════════════════════════════════════════════════════════════════════════════
 
-APP_VERSION = "1.0"
-APP_VERSION_LABEL = "Discovery"
+APP_VERSION = "1.5"
+APP_VERSION_LABEL = "Full Pipeline"
 
 # ── Session state defaults ────────────────────────────────────────────────────
 for _key, _default in [
     ("restaurants", []), ("enriched_records", []),
     ("conversation_history", []), ("chat_messages", []),
     ("last_query_trace", {}), ("pipeline_ran", False),
-    ("data_source", "mock"),
+    ("data_source", "mock"), ("enrichment_source", "mock"),
 ]:
     if _key not in st.session_state:
         st.session_state[_key] = _default
@@ -853,9 +855,46 @@ def _get_google_key() -> str:
     return key
 
 
-def _auto_enrich(restaurants):
-    """Run mock enrichment + optional ChromaDB load in one shot."""
-    enriched = [structure_record(_mock_enrich(r)) for r in restaurants]
+def _auto_enrich(restaurants, client=None, progress_bar=None):
+    """Scrape → enrich (OpenAI or mock) → store in ChromaDB."""
+    enriched = []
+    total = len(restaurants)
+    for i, r in enumerate(restaurants):
+        if progress_bar:
+            progress_bar.progress((i + 1) / total, text=f"Enriching {r.get('name', '')}…")
+
+        # v1.1 — Scrape website content
+        scraped_text = ""
+        scrape_status = "skipped"
+        url = r.get("website_url")
+        if url and SCRAPER_AVAILABLE:
+            try:
+                result = fetch_restaurant_content(url)
+                scraped_text = result.get("content", "")
+                scrape_status = result.get("status", "error")
+                if result.get("error"):
+                    scrape_status = result["error"]
+            except Exception:
+                scrape_status = "exception"
+
+        # v1.2 — OpenAI enrichment (falls back to mock)
+        if client and OPENAI_AVAILABLE:
+            try:
+                rec = enrich_with_openai(r, scraped_text, client)
+                rec["_scrape_status"] = scrape_status
+                rec["_enrichment_source"] = "openai"
+                enriched.append(structure_record(rec))
+                continue
+            except Exception:
+                pass
+
+        # Fallback: mock enrichment
+        rec = _mock_enrich(r)
+        rec["_scrape_status"] = scrape_status
+        rec["_enrichment_source"] = "mock"
+        enriched.append(structure_record(rec))
+
+    # v1.3 — Load into ChromaDB
     if CHROMA_AVAILABLE:
         try:
             collection = get_chroma_collection()
@@ -868,11 +907,13 @@ def _auto_enrich(restaurants):
 # ── Auto-initialize pipeline on first load ────────────────────────────────────
 if not st.session_state.enriched_records:
     _init_key = _get_google_key()
+    _init_client = get_openai_client()
     restaurants = run_discovery(google_api_key=_init_key)
     st.session_state.restaurants = restaurants
-    st.session_state.enriched_records = _auto_enrich(restaurants)
+    st.session_state.enriched_records = _auto_enrich(restaurants, client=_init_client)
     st.session_state.pipeline_ran = True
     st.session_state.data_source = "live" if _init_key else "mock"
+    st.session_state.enrichment_source = "openai" if _init_client else "mock"
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -893,11 +934,11 @@ with st.sidebar:
     with st.expander("📋 Features Implemented", expanded=False):
         st.markdown("""
         - ✅ Discovery Agent (mock + live)
-        - ⬜ Web Scraping
-        - ⬜ AI Enrichment (GPT-4o)
-        - ⬜ ChromaDB Semantic Search
-        - ⬜ Smart Chat w/ Memory
-        - ⬜ Ethics + Self-Reflection
+        - ✅ Web Scraping
+        - ✅ AI Enrichment (GPT-4o)
+        - ✅ ChromaDB Semantic Search
+        - ✅ Smart Chat w/ Memory
+        - ✅ Ethics + Self-Reflection
         """)
 
     st.divider()
@@ -927,7 +968,16 @@ with st.sidebar:
         st.write("ChromaDB:", "✅" if CHROMA_AVAILABLE else "⚠️ missing")
         st.caption(f"Records: {len(st.session_state.enriched_records)}")
         _src = st.session_state.data_source
-        st.caption(f"Data source: {'🌐 Google Places API' if _src == 'live' else '📦 Mock data'}")
+        st.caption(f"Data: {'🌐 Live API' if _src == 'live' else '📦 Mock'}")
+        _esrc = st.session_state.enrichment_source
+        st.caption(f"Enrichment: {'🧠 GPT-4o' if _esrc == 'openai' else '📦 Mock'}")
+        if CHROMA_AVAILABLE:
+            try:
+                _col = get_chroma_collection()
+                st.caption(f"ChromaDB: {_col.count()} vectors")
+            except Exception:
+                st.caption("ChromaDB: not loaded")
+        st.caption(f"Chat turns: {len(st.session_state.chat_messages) // 2}")
 
     with st.expander("🧪 Run Tests"):
         if st.button("Run All Tests"):
@@ -1014,15 +1064,20 @@ with col3:
     price_pref = st.selectbox("💰 Budget", ["Any Price", "$", "$$", "$$$", "$$$$"])
 
 if st.button("🔍 Find Restaurants", type="primary", use_container_width=True):
-    with st.spinner("Discovering and enriching restaurants..."):
-        google_api_key = _get_google_key()
+    google_api_key = _get_google_key()
+    _btn_client = get_openai_client()
+    with st.spinner("Discovering restaurants..."):
         restaurants = run_discovery(google_api_key=google_api_key)
         st.session_state.restaurants = restaurants
-        st.session_state.enriched_records = _auto_enrich(restaurants)
-        st.session_state.pipeline_ran = True
-        st.session_state.data_source = "live" if google_api_key else "mock"
-        st.session_state.chat_messages = []
-        st.session_state.conversation_history = []
+    progress = st.progress(0, text="Enriching…")
+    st.session_state.enriched_records = _auto_enrich(
+        restaurants, client=_btn_client, progress_bar=progress)
+    progress.empty()
+    st.session_state.pipeline_ran = True
+    st.session_state.data_source = "live" if google_api_key else "mock"
+    st.session_state.enrichment_source = "openai" if _btn_client else "mock"
+    st.session_state.chat_messages = []
+    st.session_state.conversation_history = []
     st.rerun()
 
 # ── Step 2: Results ───────────────────────────────────────────────────────────
@@ -1044,10 +1099,15 @@ if st.session_state.pipeline_ran and st.session_state.enriched_records:
 
     # Data source indicator
     _ds = st.session_state.data_source
+    _es = st.session_state.enrichment_source
     if _ds == "live":
         st.success("🌐 Results from **Google Places API** (live data)")
     else:
         st.info("📦 Results from **mock data** — add a Google Places API key for live results")
+    if _es == "openai":
+        st.success("🧠 Enriched with **GPT-4o**")
+    else:
+        st.caption("📦 Enriched with mock data — add an OpenAI API key for AI enrichment")
 
     # Summary metrics
     if filtered:
@@ -1090,6 +1150,11 @@ if st.session_state.pipeline_ran and st.session_state.enriched_records:
                          f"with a {rating:.1f}/5.0 rating. "
                          f"It falls in the {price} price range"
                          f"{' and has an online menu available' if r.get('menu_available_online') else ''}.")
+                # v1.1 — Scrape status
+                _ss = r.get('_scrape_status', 'unknown')
+                _es_card = r.get('_enrichment_source', 'mock')
+                _scrape_icon = {"success": "✅", "empty": "⚠️", "skipped": "⏭️"}.get(_ss, "❌")
+                st.caption(f"Scrape: {_scrape_icon} {_ss}  |  Enrichment: {'🧠 AI' if _es_card == 'openai' else '📦 Mock'}")
                 if items:
                     st.write("**Menu Highlights:**")
                     for item in items[:5]:
@@ -1100,114 +1165,124 @@ if st.session_state.pipeline_ran and st.session_state.enriched_records:
                 if r.get("website_url"):
                     st.write(f"🌐 [Visit Website]({r['website_url']})")
 
-    # ── Step 3: Chat ──────────────────────────────────────────────────────────
-    st.divider()
-    st.subheader("💬 Ask About These Restaurants")
-    st.caption("Ask follow-up questions — e.g. 'Which has the best seafood?' or 'Something cheap in Rochester?'")
+# ── Step 3: Chat (always visible) ────────────────────────────────────────────
+st.divider()
+st.subheader("💬 Ask About These Restaurants")
+st.caption("Ask follow-up questions — e.g. 'Which has the best seafood?' or 'Something cheap in Rochester?'")
 
-    # Agent options
-    with st.expander("⚙️ Agent Options"):
-        a1, a2, a3 = st.columns(3)
-        with a1:
-            use_reflection = st.checkbox("Self-Reflection", value=False)
-        with a2:
-            run_ethics = st.checkbox("Ethics Evaluation", value=False)
-        with a3:
-            use_chroma = st.checkbox("ChromaDB Retrieval", value=CHROMA_AVAILABLE)
-        if st.button("Clear Chat"):
-            st.session_state.chat_messages = []
-            st.session_state.conversation_history = []
-            st.session_state.last_query_trace = {}
-            st.rerun()
+_turns = len(st.session_state.chat_messages) // 2
+if _turns > 0:
+    st.caption(f"🧠 Short-term memory: {_turns} turn{'s' if _turns != 1 else ''}")
 
-    # Chat history
-    for msg in st.session_state.chat_messages:
-        with st.chat_message(msg["role"]):
-            st.write(msg["content"])
+with st.expander("⚙️ Agent Options"):
+    a1, a2, a3 = st.columns(3)
+    with a1:
+        use_reflection = st.checkbox("Self-Reflection", value=True)
+    with a2:
+        run_ethics = st.checkbox("Ethics Evaluation", value=True)
+    with a3:
+        use_chroma = st.checkbox("ChromaDB Retrieval", value=CHROMA_AVAILABLE)
+    if st.button("Clear Chat"):
+        st.session_state.chat_messages = []
+        st.session_state.conversation_history = []
+        st.session_state.last_query_trace = {}
+        st.rerun()
 
-    # Chat input
-    user_input = st.chat_input("Ask about restaurants...")
-    if user_input:
-        client = get_openai_client()
-        with st.chat_message("user"):
-            st.write(user_input)
-        st.session_state.chat_messages.append({"role": "user", "content": user_input})
+for msg in st.session_state.chat_messages:
+    with st.chat_message(msg["role"]):
+        st.write(msg["content"])
 
-        with st.chat_message("assistant"):
-            with st.spinner("Finding the best match..."):
-                chat_records = st.session_state.enriched_records
+user_input = st.chat_input("Ask about restaurants...")
+if user_input:
+    client = get_openai_client()
+    with st.chat_message("user"):
+        st.write(user_input)
+    st.session_state.chat_messages.append({"role": "user", "content": user_input})
 
-                if not client:
-                    retrieved = simple_retrieve(user_input, chat_records, k=3)
-                    answer = "**Top matches (keyword search):**\n\n"
-                    for r in retrieved:
-                        answer += (
-                            f"**{r['name']}** ({r['city']}) — {r.get('cuisine_type', 'N/A')}, "
-                            f"{r.get('price_range', '$$')}, Rating: {r.get('rating', 'N/A')}\n\n"
-                        )
-                    st.write(answer)
-                    st.session_state.chat_messages.append(
-                        {"role": "assistant", "content": answer})
+    with st.chat_message("assistant"):
+        with st.spinner("Finding the best match..."):
+            chat_records = st.session_state.enriched_records
+
+            if not client:
+                retrieved = simple_retrieve(user_input, chat_records, k=3)
+                answer = "**Top matches (keyword search):**\n\n"
+                for r in retrieved:
+                    answer += (
+                        f"**{r['name']}** ({r['city']}) — {r.get('cuisine_type', 'N/A')}, "
+                        f"{r.get('price_range', '$$')}, Rating: {r.get('rating', 'N/A')}\n\n"
+                    )
+                answer += "\n*💡 Add an OpenAI API key for conversational recommendations.*"
+                st.write(answer)
+                st.session_state.chat_messages.append(
+                    {"role": "assistant", "content": answer})
+            else:
+                if use_chroma and CHROMA_AVAILABLE:
+                    try:
+                        collection = get_chroma_collection()
+                        chroma_results = chroma_search(user_input, collection, k=5)
+                        if chroma_results:
+                            chat_records = chroma_results
+                    except Exception:
+                        pass
+
+                if use_reflection:
+                    trace = query_with_reflection(
+                        user_input, chat_records,
+                        st.session_state.conversation_history, client)
+                    answer = trace["final_response"]
+                    st.session_state.last_query_trace = trace
                 else:
-                    if use_chroma and CHROMA_AVAILABLE:
-                        try:
-                            collection = get_chroma_collection()
-                            chroma_results = chroma_search(user_input, collection, k=5)
-                            if chroma_results:
-                                chat_records = chroma_results
-                        except Exception:
-                            pass
+                    answer = query_agent(
+                        user_input, chat_records,
+                        st.session_state.conversation_history, client)
+                    st.session_state.last_query_trace = {}
 
-                    if use_reflection:
-                        trace = query_with_reflection(
-                            user_input, chat_records,
-                            st.session_state.conversation_history, client)
-                        answer = trace["final_response"]
-                        st.session_state.last_query_trace = trace
+                st.write(answer)
+                st.session_state.chat_messages.append(
+                    {"role": "assistant", "content": answer})
+
+                if run_ethics:
+                    with st.spinner("Running ethics evaluation..."):
+                        retrieved_for_ethics = simple_retrieve(user_input, chat_records)
+                        ethics = evaluate_ethics(
+                            user_input, answer, retrieved_for_ethics, client)
+                    if "error" not in ethics:
+                        st.divider()
+                        st.markdown("**📊 Ethics Rubric Scores**")
+                        cols = st.columns(5)
+                        for idx, dim in enumerate(["geographic_fairness", "price_diversity",
+                                                   "cuisine_respect", "transparency", "faithfulness"]):
+                            d = ethics.get(dim, {})
+                            with cols[idx]:
+                                st.metric(dim.replace('_', ' ').title(),
+                                          f"{d.get('score', '?')}/5")
+                        st.write(f"**Overall: {ethics.get('overall', '?')}/5**")
+                        if ethics.get("issues"):
+                            for issue in ethics["issues"]:
+                                st.caption(f"⚠️ {issue}")
                     else:
-                        answer = query_agent(
-                            user_input, chat_records,
-                            st.session_state.conversation_history, client)
-                        st.session_state.last_query_trace = {}
+                        st.caption(f"Ethics evaluation failed: {ethics.get('error')}")
 
-                    st.write(answer)
-                    st.session_state.chat_messages.append(
-                        {"role": "assistant", "content": answer})
+    if use_reflection and st.session_state.last_query_trace:
+        trace = st.session_state.last_query_trace
+        with st.expander("🔄 Self-Reflection Trace", expanded=True):
+            st.write("✏️ **Revised:**", "✅ Yes" if trace.get("revised") else "❌ No")
+            st.write("**Initial Response:**", trace.get("initial_response", ""))
+            critique = trace.get("critique", {})
+            if critique.get("issues"):
+                st.write("**Issues Found:**")
+                for issue in critique["issues"]:
+                    st.write(f"  • {issue}")
 
-                    if run_ethics:
-                        with st.spinner("Running ethics evaluation..."):
-                            retrieved_for_ethics = simple_retrieve(user_input, chat_records)
-                            ethics = evaluate_ethics(
-                                user_input, answer, retrieved_for_ethics, client)
-                        with st.expander("📊 Ethics Rubric Scores"):
-                            if "error" not in ethics:
-                                for dim in ["geographic_fairness", "price_diversity",
-                                             "cuisine_respect", "transparency", "faithfulness"]:
-                                    d = ethics.get(dim, {})
-                                    st.write(f"**{dim.replace('_', ' ').title()}**: "
-                                             f"{d.get('score', '?')}/5 — {d.get('note', '')}")
-                                st.write(f"**Overall**: {ethics.get('overall', '?')}/5")
-                            else:
-                                st.write("Evaluation failed:", ethics.get("error"))
+# ── Data Export ───────────────────────────────────────────────────────────────
+st.divider()
+with st.expander("📥 Export Data"):
+    json_str = json.dumps(st.session_state.enriched_records, indent=2)
+    st.download_button(
+        "Download restaurants.json",
+        data=json_str,
+        file_name="restaurants_enriched.json",
+        mime="application/json",
+    )
 
-        if use_reflection and st.session_state.last_query_trace:
-            trace = st.session_state.last_query_trace
-            with st.expander("🔄 Self-Reflection Trace"):
-                st.write("**Revised:**", trace.get("revised", False))
-                st.write("**Initial:**", trace.get("initial_response", ""))
-                critique = trace.get("critique", {})
-                if critique.get("issues"):
-                    st.write("**Issues:**")
-                    for issue in critique["issues"]:
-                        st.write(f"  • {issue}")
 
-    # ── Data Export ───────────────────────────────────────────────────────────
-    st.divider()
-    with st.expander("📥 Export Data"):
-        json_str = json.dumps(st.session_state.enriched_records, indent=2)
-        st.download_button(
-            "Download restaurants.json",
-            data=json_str,
-            file_name="restaurants_enriched.json",
-            mime="application/json",
-        )

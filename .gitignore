@@ -1,1 +1,5 @@
 .streamlit/secrets.toml
+chroma_store/
+scrape_cache/
+__pycache__/
+*.pyc
